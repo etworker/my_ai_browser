@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>VOA - 视觉化操作助手</title>
+    <link rel="stylesheet" href="/src/styles.css" />
+</head>
+<body>
+    <div id="app">
+        <header class="header">
+            <h1>VOA</h1>
+            <span class="subtitle">视觉化操作助手</span>
+        </header>
+        
+        <main class="main">
+            <div class="status-panel">
+                <div class="status-item">
+                    <span class="status-label">状态</span>
+                    <span id="status" class="status-value">就绪</span>
+                </div>
+                <div class="status-item">
+                    <span class="status-label">工作流</span>
+                    <span id="workflow-info" class="status-value">-</span>
+                </div>
+                <div class="status-item">
+                    <span class="status-label">步骤</span>
+                    <span id="step-info" class="status-value">-</span>
+                </div>
+            </div>
+            
+            <div id="chat-container" class="chat-container">
+                <div class="chat-welcome">
+                    <p>您好！我是 VOA，您的视觉化操作助手。</p>
+                    <p>请告诉我您想完成什么操作，比如：</p>
+                    <ul>
+                        <li>"我想在 AWS 上启动一台 EC2"</li>
+                        <li>"帮我创建一个 GitHub 仓库"</li>
+                        <li>"在 Azure 上创建存储账户"</li>
+                    </ul>
+                </div>
+            </div>
+            
+            <div class="input-area">
+                <textarea 
+                    id="user-input" 
+                    placeholder="描述您想完成的操作..."
+                    rows="2"
+                ></textarea>
+                <button id="send-btn" class="send-btn">
+                    <span>发送</span>
+                </button>
+            </div>
+            
+            <div class="actions">
+                <button id="capture-btn" class="action-btn">
+                    捕获屏幕
+                </button>
+                <button id="calibrate-btn" class="action-btn">
+                    校准
+                </button>
+                <button id="toggle-overlay-btn" class="action-btn">
+                    显示高亮层
+                </button>
+                <button id="test-highlight-btn" class="action-btn">
+                    测试高亮
+                </button>
+            </div>
+        </main>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+</body>
+</html>
