@@ -26,10 +26,10 @@
       {
         "label": "overlay",
         "title": "VOA Overlay",
-        "devUrl": "http://localhost:1420/overlay.html",
+        "url": "index.html",
         "fullscreen": true,
-        "always_on_top": true,
-        "skip_taskbar": true,
+        "alwaysOnTop": true,
+        "skipTaskbar": true,
         "decorations": false,
         "resizable": false,
         "transparent": true,
