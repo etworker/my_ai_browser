@@ -1,7 +1,7 @@
 use base64::{engine::general_purpose::STANDARD, Engine};
 use serde::{Deserialize, Serialize};
 use std::io::Cursor;
-use tauri::{AppHandle, Emitter, Manager, WebviewUrl, WebviewWindowBuilder};
+use tauri::{AppHandle, Emitter, Manager};
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ScreenRegion {
@@ -48,30 +48,17 @@ fn capture_screen() -> Result<CaptureResult, String> {
 
 #[tauri::command]
 async fn create_overlay_window(app: AppHandle) -> Result<(), String> {
-    let overlay = app.get_webview_window("overlay");
-    
-    if overlay.is_some() {
-        return Ok(());
+    if let Some(overlay) = app.get_webview_window("overlay") {
+        overlay.show().map_err(|e| e.to_string())?;
+        overlay.set_focus().map_err(|e| e.to_string())?;
     }
-    
-    WebviewWindowBuilder::new(&app, "overlay", WebviewUrl::App("/overlay.html".into()))
-        .title("VOA Overlay")
-        .fullscreen(true)
-        .transparent(true)
-        .always_on_top(true)
-        .skip_taskbar(true)
-        .decorations(false)
-        .resizable(false)
-        .build()
-        .map_err(|e| e.to_string())?;
-    
     Ok(())
 }
 
 #[tauri::command]
 async fn close_overlay_window(app: AppHandle) -> Result<(), String> {
     if let Some(overlay) = app.get_webview_window("overlay") {
-        overlay.close().map_err(|e| e.to_string())?;
+        overlay.hide().map_err(|e| e.to_string())?;
     }
     Ok(())
 }
@@ -102,6 +89,12 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_sql::Builder::new().build())
         .plugin(tauri_plugin_fs::init())
+        .setup(|app| {
+            if let Some(overlay) = app.get_webview_window("overlay") {
+                let _ = overlay.hide();
+            }
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             capture_screen,
             create_overlay_window,
