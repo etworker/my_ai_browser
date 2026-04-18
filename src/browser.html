@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>VOA Browser</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        html, body {
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+        }
+        
+        #browser-toolbar {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 12px;
+            background: #f5f5f5;
+            border-bottom: 1px solid #ddd;
+        }
+        
+        #browser-toolbar button {
+            padding: 6px 12px;
+            background: white;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 13px;
+        }
+        
+        #browser-toolbar button:hover {
+            background: #e8e8e8;
+        }
+        
+        #url-bar {
+            flex: 1;
+            padding: 6px 12px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            font-size: 13px;
+        }
+        
+        #webview-container {
+            flex: 1;
+            position: relative;
+        }
+        
+        #webview {
+            width: 100%;
+            height: 100%;
+            border: none;
+        }
+    </style>
+</head>
+<body>
+    <div id="browser-toolbar">
+        <button id="back-btn" title="后退">←</button>
+        <button id="forward-btn" title="前进">→</button>
+        <button id="refresh-btn" title="刷新">⟳</button>
+        <input type="text" id="url-bar" placeholder="输入网址..." />
+        <button id="go-btn">前往</button>
+        <button id="capture-btn">捕获页面</button>
+        <button id="get-dom-btn">获取DOM</button>
+    </div>
+    <div id="webview-container">
+        <webview id="webview" src="https://www.google.com"></webview>
+    </div>
+    
+    <script type="module">
+        const { invoke } = window.__TAURI__.core;
+        const { listen } = window.__TAURI__.event;
+        const webview = document.getElementById('webview');
+        const urlBar = document.getElementById('url-bar');
+        
+        listen('highlight-element', (event) => {
+            const { selector, hint } = event.payload;
+            highlightElement(selector, hint);
+        });
+        
+        listen('click-element', (event) => {
+            const { selector } = event.payload;
+            clickElement(selector);
+        });
+        
+        function highlightElement(selector, hint) {
+            webview.executeJavaScript(`
+                (function() {
+                    const el = document.querySelector('${selector}');
+                    if (el) {
+                        const rect = el.getBoundingClientRect();
+                        el.style.boxShadow = '0 0 0 4px #ff4444, 0 0 20px rgba(255, 68, 68, 0.5)';
+                        el.style.transition = 'box-shadow 0.3s ease';
+                        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                        
+                        setTimeout(() => {
+                            el.style.boxShadow = '';
+                        }, 5000);
+                        
+                        return { success: true, rect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height } };
+                    }
+                    return { success: false };
+                })()
+            `).then(result => {
+                if (result && result.success) {
+                    console.log('Element highlighted:', result.rect);
+                }
+            });
+        }
+        
+        function clickElement(selector) {
+            webview.executeJavaScript(`
+                (function() {
+                    const el = document.querySelector('${selector}');
+                    if (el) {
+                        el.click();
+                        return { success: true };
+                    }
+                    return { success: false };
+                })()
+            `);
+        }
+        
+        document.getElementById('back-btn').addEventListener('click', () => {
+            webview.goBack();
+        });
+        
+        document.getElementById('forward-btn').addEventListener('click', () => {
+            webview.goForward();
+        });
+        
+        document.getElementById('refresh-btn').addEventListener('click', () => {
+            webview.reload();
+        });
+        
+        document.getElementById('go-btn').addEventListener('click', () => {
+            let url = urlBar.value.trim();
+            if (!url.startsWith('http://') && !url.startsWith('https://')) {
+                url = 'https://' + url;
+            }
+            webview.src = url;
+        });
+        
+        urlBar.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                document.getElementById('go-btn').click();
+            }
+        });
+        
+        webview.addEventListener('did-navigate', (e) => {
+            urlBar.value = e.payload.url;
+        });
+        
+        document.getElementById('capture-btn').addEventListener('click', async () => {
+            try {
+                const captureData = await webview.captureSnapshot();
+                const base64 = btoa(String.fromCharCode(...new Uint8Array(captureData)));
+                
+                await invoke('browser_capture', {
+                    imageData: base64,
+                    url: webview.src
+                });
+                
+                alert('页面捕获成功！');
+            } catch (e) {
+                console.error('捕获失败:', e);
+                alert('捕获失败: ' + e);
+            }
+        });
+        
+        document.getElementById('get-dom-btn').addEventListener('click', async () => {
+            try {
+                const result = await webview.executeJavaScript(`
+                    (function() {
+                        function getElementInfo(el, depth = 0) {
+                            if (depth > 3) return null;
+                            
+                            const tag = el.tagName.toLowerCase();
+                            const id = el.id ? '#' + el.id : '';
+                            const classes = el.className ? '.' + el.className.split(' ').join('.') : '';
+                            const text = el.innerText ? el.innerText.slice(0, 100).trim() : '';
+                            const rect = el.getBoundingClientRect();
+                            
+                            let clickable = false;
+                            if (el.tagName === 'BUTTON' || el.tagName === 'A' || 
+                                el.onclick || el.getAttribute('role') === 'button' ||
+                                el.className.includes('btn') || el.className.includes('button')) {
+                                clickable = true;
+                            }
+                            
+                            const children = [];
+                            for (const child of el.children) {
+                                const childInfo = getElementInfo(child, depth + 1);
+                                if (childInfo) children.push(childInfo);
+                            }
+                            
+                            return {
+                                tag,
+                                id,
+                                classes,
+                                text,
+                                clickable,
+                                rect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
+                                children: children.slice(0, 10)
+                            };
+                        }
+                        
+                        const body = document.body;
+                        const interactive = [];
+                        
+                        function findInteractive(el) {
+                            if (!el) return;
+                            
+                            const tag = el.tagName?.toLowerCase();
+                            const isInteractive = tag === 'button' || tag === 'a' || tag === 'input' || 
+                                                tag === 'select' || tag === 'textarea' ||
+                                                el.onclick || el.getAttribute('role') === 'button' ||
+                                                el.className?.includes('btn') || el.className?.includes('button');
+                            
+                            if (isInteractive && el.getBoundingClientRect().width > 0) {
+                                const text = el.innerText?.trim() || el.value?.trim() || el.placeholder || '';
+                                if (text || tag === 'button' || tag === 'a') {
+                                    const rect = el.getBoundingClientRect();
+                                    interactive.push({
+                                        tag,
+                                        text: text.slice(0, 100),
+                                        rect: { x: Math.round(rect.x), y: Math.round(rect.y), 
+                                               width: Math.round(rect.width), height: Math.round(rect.height) },
+                                        selector: getSelector(el)
+                                    });
+                                }
+                            }
+                            
+                            for (const child of el.children) {
+                                findInteractive(child);
+                            }
+                        }
+                        
+                        function getSelector(el) {
+                            if (el.id) return '#' + el.id;
+                            if (el.className && typeof el.className === 'string' && el.className.split(' ')[0]) {
+                                return el.tagName.toLowerCase() + '.' + el.className.split(' ')[0];
+                            }
+                            return el.tagName.toLowerCase();
+                        }
+                        
+                        findInteractive(document.body);
+                        
+                        return JSON.stringify({
+                            title: document.title,
+                            url: window.location.href,
+                            interactiveElements: interactive.slice(0, 50),
+                            fullDOM: getElementInfo(document.body)
+                        });
+                    })()
+                `);
+                
+                await invoke('browser_dom', {
+                    domData: result,
+                    url: webview.src
+                });
+                
+                alert('DOM 获取成功！');
+            } catch (e) {
+                console.error('获取 DOM 失败:', e);
+                alert('获取 DOM 失败: ' + e);
+            }
+        });
+        
+        window.addEventListener('DOMContentLoaded', () => {
+            console.log('VOA Browser 已加载');
+        });
+    </script>
+</body>
+</html>

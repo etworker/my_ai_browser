@@ -15,10 +15,10 @@
       {
         "label": "main",
         "title": "VOA - 视觉化操作助手",
-        "width": 900,
-        "height": 700,
-        "minWidth": 600,
-        "minHeight": 500,
+        "width": 1200,
+        "height": 800,
+        "minWidth": 800,
+        "minHeight": 600,
         "center": true,
         "resizable": true,
         "decorations": true
