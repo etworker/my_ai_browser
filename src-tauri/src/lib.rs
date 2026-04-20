@@ -90,34 +90,45 @@ async fn set_auto_mode(app: AppHandle, enabled: bool) -> Result<(), String> {
 }
 
 #[tauri::command]
-async fn navigate_browser(app: AppHandle, window_label: String, url: String) -> Result<(), String> {
-    if let Some(window) = app.get_webview_window(&window_label) {
-        window.emit("webview-navigate", serde_json::json!({ "url": url }))
+async fn navigate_browser(app: AppHandle, url: String) -> Result<(), String> {
+    if let Some(browser) = app.get_webview_window("browser") {
+        browser.emit("webview-navigate", serde_json::json!({ "url": url }))
             .map_err(|e| e.to_string())?;
+        browser.set_focus().map_err(|e| e.to_string())?;
     }
     Ok(())
 }
 
 #[tauri::command]
-async fn create_browser_window(app: AppHandle, url: String) -> Result<String, String> {
-    let label = format!("webview-{}", uuid::Uuid::new_v4());
+async fn create_browser_webview(app: AppHandle, url: String) -> Result<(), String> {
+    if app.get_webview_window("browser").is_some() {
+        if let Some(browser) = app.get_webview_window("browser") {
+            browser.close().map_err(|e| e.to_string())?;
+        }
+    }
     
-    let window_builder = WebviewWindowBuilder::new(&app, &label, WebviewUrl::External(url.parse().map_err(|e: url::ParseError| e.to_string())?))
-        .title("Browser")
+    let main_window = app.get_webview_window("main").ok_or("Main window not found")?;
+    let main_label = main_window.label().to_string();
+    
+    let _browser = WebviewWindowBuilder::new(&app, "browser", WebviewUrl::External(url.parse().map_err(|e: url::ParseError| e.to_string())?))
+        .title("VOA Browser")
         .inner_size(1000.0, 700.0)
-        .decorations(true)
+        .min_inner_size(600.0, 400.0)
+        .center()
         .resizable(true)
-        .visible(true);
+        .decorations(true)
+        .visible(true)
+        .parent(&main_window).map_err(|e| e.to_string())?
+        .build()
+        .map_err(|e| e.to_string())?;
     
-    window_builder.build().map_err(|e| e.to_string())?;
-    
-    Ok(label)
+    Ok(())
 }
 
 #[tauri::command]
-async fn close_browser_window(app: AppHandle, window_label: String) -> Result<(), String> {
-    if let Some(window) = app.get_webview_window(&window_label) {
-        window.close().map_err(|e| e.to_string())?;
+async fn close_browser(app: AppHandle) -> Result<(), String> {
+    if let Some(browser) = app.get_webview_window("browser") {
+        browser.close().map_err(|e| e.to_string())?;
     }
     Ok(())
 }
@@ -151,15 +162,15 @@ async fn execute_browser_action(app: AppHandle, action: String) -> Result<(), St
     
     if action_type == "click" {
         if let Some(selector) = action_data["selector"].as_str() {
-            if let Some(main) = app.get_webview_window("main") {
-                main.emit("click_action", serde_json::json!({ "selector": selector }))
+            if let Some(browser) = app.get_webview_window("browser") {
+                browser.emit("click_action", serde_json::json!({ "selector": selector }))
                     .map_err(|e| e.to_string())?;
             }
         }
     } else if action_type == "navigate" {
         if let Some(url) = action_data["url"].as_str() {
-            if let Some(main) = app.get_webview_window("main") {
-                main.emit("navigate_action", serde_json::json!({ "url": url }))
+            if let Some(browser) = app.get_webview_window("browser") {
+                browser.emit("navigate_action", serde_json::json!({ "url": url }))
                     .map_err(|e| e.to_string())?;
             }
         }
@@ -179,8 +190,8 @@ pub fn run() {
             analyze_page,
             set_auto_mode,
             navigate_browser,
-            create_browser_window,
-            close_browser_window,
+            create_browser_webview,
+            close_browser,
             show_highlight,
             hide_highlight,
             execute_browser_action,
