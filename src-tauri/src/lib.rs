@@ -90,6 +90,26 @@ async fn set_auto_mode(app: AppHandle, enabled: bool) -> Result<(), String> {
 }
 
 #[tauri::command]
+async fn navigate_browser(app: AppHandle, url: String) -> Result<(), String> {
+    let main_window = app.get_webview_window("main").ok_or("Main window not found")?;
+    
+    main_window.emit("browser-navigate", serde_json::json!({ "url": url }))
+        .map_err(|e| e.to_string())?;
+    
+    Ok(())
+}
+
+#[tauri::command]
+async fn create_browser_webview(app: AppHandle, url: String) -> Result<(), String> {
+    let main_window = app.get_webview_window("main").ok_or("Main window not found")?;
+    
+    main_window.emit("create-webview", serde_json::json!({ "url": url }))
+        .map_err(|e| e.to_string())?;
+    
+    Ok(())
+}
+
+#[tauri::command]
 async fn show_highlight(
     app: AppHandle,
     region: ScreenRegion,
@@ -145,6 +165,8 @@ pub fn run() {
             capture_screen,
             analyze_page,
             set_auto_mode,
+            navigate_browser,
+            create_browser_webview,
             show_highlight,
             hide_highlight,
             execute_browser_action,
