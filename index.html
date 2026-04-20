@@ -470,15 +470,24 @@
         
         // 导航功能
         function navigateTo(url) {
+            console.log('navigateTo called:', url);
             if (!url.startsWith('http://') && !url.startsWith('https://')) {
                 url = 'https://' + url;
             }
+            console.log('navigating to:', url);
             webview.src = url;
+            console.log('webview.src set to:', webview.src);
         }
         
-        goBtn.addEventListener('click', () => navigateTo(urlBar.value));
+        goBtn.addEventListener('click', () => {
+            console.log('goBtn clicked, urlBar.value:', urlBar.value);
+            navigateTo(urlBar.value);
+        });
         urlBar.addEventListener('keydown', (e) => {
-            if (e.key === 'Enter') navigateTo(urlBar.value);
+            if (e.key === 'Enter') {
+                console.log('Enter pressed, urlBar.value:', urlBar.value);
+                navigateTo(urlBar.value);
+            }
         });
         
         backBtn.addEventListener('click', () => webview.goBack());
@@ -489,10 +498,9 @@
         });
         
         webview.addEventListener('did-navigate', (e) => {
+            console.log('did-navigate:', e.payload.url);
             urlBar.value = e.payload.url;
             tabs[0].url = e.payload.url;
-            backBtn.disabled = !webview.canGoBack();
-            forwardBtn.disabled = !webview.canGoForward();
             if (autoMode && e.payload.url !== lastUrl) {
                 lastUrl = e.payload.url;
                 setTimeout(captureAndAnalyze, 1500);
@@ -500,6 +508,7 @@
         });
         
         webview.addEventListener('did-navigate-in-page', (e) => {
+            console.log('did-navigate-in-page:', e.payload.url);
             if (autoMode && e.payload.url !== lastUrl) {
                 lastUrl = e.payload.url;
                 setTimeout(captureAndAnalyze, 1000);
