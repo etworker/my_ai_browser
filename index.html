@@ -36,120 +36,53 @@
             height: 100vh;
         }
         
-        /* 左侧浏览器区域 */
-        #browser-section {
+        /* 左侧说明区域 */
+        #info-section {
             flex: 1;
             display: flex;
             flex-direction: column;
-            min-width: 0;
+            padding: 40px;
+            overflow-y: auto;
         }
         
-        /* 标签栏 */
-        #tab-bar {
-            display: flex;
-            align-items: center;
-            gap: 4px;
-            padding: 6px 8px;
-            background: #2d2d2d;
+        #info-section h1 {
+            font-size: 32px;
+            color: var(--primary);
+            margin-bottom: 16px;
         }
         
-        .tab {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            padding: 6px 12px;
-            background: #444;
-            color: #ccc;
-            border-radius: 4px 4px 0 0;
-            font-size: 12px;
-            max-width: 180px;
-            cursor: pointer;
-        }
-        
-        .tab.active {
-            background: var(--bg);
+        #info-section h2 {
+            font-size: 20px;
+            margin: 24px 0 12px;
             color: var(--text);
         }
         
-        #new-tab-btn {
-            width: 28px;
-            height: 28px;
+        #info-section p {
+            color: var(--text-secondary);
+            margin-bottom: 12px;
+        }
+        
+        #info-section ul {
+            margin-left: 24px;
+            color: var(--text-secondary);
+        }
+        
+        #info-section li {
+            margin-bottom: 8px;
+        }
+        
+        #info-section code {
+            background: #e8e8e8;
+            padding: 2px 6px;
             border-radius: 4px;
-            background: transparent;
-            border: none;
-            color: #888;
-            font-size: 18px;
-            cursor: pointer;
-        }
-        
-        #new-tab-btn:hover {
-            background: #444;
-            color: #fff;
-        }
-        
-        /* 地址栏 */
-        #url-bar-container {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            padding: 6px 8px;
-            background: #2d2d2d;
-            border-top: 1px solid #444;
-        }
-        
-        #nav-buttons {
-            display: flex;
-            gap: 4px;
-        }
-        
-        #nav-buttons button {
-            width: 28px;
-            height: 28px;
-            border-radius: 4px;
-            background: #444;
-            border: none;
-            color: #fff;
-            cursor: pointer;
-            font-size: 14px;
-        }
-        
-        #nav-buttons button:hover {
-            background: #555;
-        }
-        
-        #url-bar {
-            flex: 1;
-            padding: 6px 12px;
-            background: #333;
-            color: #fff;
-            border: 1px solid #555;
-            border-radius: 4px;
+            font-family: Monaco, Menlo, monospace;
             font-size: 13px;
-            outline: none;
-        }
-        
-        #go-btn {
-            padding: 6px 16px;
-            background: var(--primary);
-            color: white;
-            border: none;
-            border-radius: 4px;
-            cursor: pointer;
-            font-size: 13px;
-        }
-        
-        /* Webview 容器 */
-        #browser-container {
-            flex: 1;
-            position: relative;
-            background: white;
-            overflow: hidden;
         }
         
         /* 右侧对话面板 */
         #chat-section {
-            width: 380px;
-            min-width: 300px;
+            width: 400px;
+            min-width: 320px;
             display: flex;
             flex-direction: column;
             background: var(--surface);
@@ -157,13 +90,13 @@
         }
         
         #chat-header {
-            padding: 12px 16px;
+            padding: 16px 20px;
             background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%);
             color: white;
         }
         
         #chat-header h1 {
-            font-size: 18px;
+            font-size: 20px;
             font-weight: 600;
         }
         
@@ -175,7 +108,7 @@
         #chat-status {
             display: flex;
             gap: 16px;
-            padding: 8px 16px;
+            padding: 10px 20px;
             background: var(--bg);
             border-bottom: 1px solid var(--border);
             font-size: 12px;
@@ -192,13 +125,12 @@
         #chat-container {
             flex: 1;
             overflow-y: auto;
-            padding: 16px;
-            max-height: 300px;
+            padding: 20px;
         }
         
         /* 日志面板 */
         #log-panel {
-            height: 150px;
+            height: 180px;
             border-top: 1px solid var(--border);
             background: #1e1e1e;
             color: #d4d4d4;
@@ -227,17 +159,43 @@
             color: #89d185;
         }
         
+        .log-header {
+            padding: 4px 8px;
+            background: #252526;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .log-header span {
+            color: #888;
+            font-size: 11px;
+        }
+        
+        #clear-log-btn {
+            padding: 2px 8px;
+            background: transparent;
+            color: #888;
+            border: 1px solid #444;
+            border-radius: 4px;
+            font-size: 10px;
+            cursor: pointer;
+        }
+        
         .chat-welcome {
             color: var(--text-secondary);
         }
         
         .chat-welcome p {
-            margin-bottom: 8px;
+            margin-bottom: 12px;
         }
         
         .chat-welcome ul {
             margin-left: 20px;
-            margin-top: 8px;
+        }
+        
+        .chat-welcome li {
+            margin-bottom: 8px;
         }
         
         .chat-message {
@@ -248,12 +206,12 @@
         
         .chat-message.user {
             background: #e8f0fe;
-            margin-left: 30px;
+            margin-left: 40px;
         }
         
         .chat-message.assistant {
             background: var(--bg);
-            margin-right: 30px;
+            margin-right: 40px;
         }
         
         .chat-message .role {
@@ -264,7 +222,7 @@
         }
         
         #input-area {
-            padding: 12px;
+            padding: 16px 20px;
             border-top: 1px solid var(--border);
             background: var(--surface);
         }
@@ -278,7 +236,11 @@
             font-family: inherit;
             resize: none;
             outline: none;
-            margin-bottom: 8px;
+            margin-bottom: 10px;
+        }
+        
+        #user-input:focus {
+            border-color: var(--primary);
         }
         
         #input-actions {
@@ -313,61 +275,49 @@
             color: white;
         }
         
-        #clear-log-btn {
-            padding: 4px 8px;
-            background: transparent;
-            color: #888;
-            border: 1px solid #555;
-            border-radius: 4px;
-            font-size: 10px;
+        #open-browser-btn {
+            padding: 10px 16px;
+            background: var(--surface);
+            color: var(--primary-dark);
+            border: 1px solid var(--primary-dark);
+            border-radius: 8px;
+            font-size: 14px;
             cursor: pointer;
         }
         
-        .log-header {
-            padding: 4px 8px;
-            background: #252526;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-        }
-        
-        .log-header span {
-            color: #888;
-            font-size: 11px;
-        }
-        
-        #browser-loading {
-            position: absolute;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            color: #888;
-            font-size: 14px;
+        #open-browser-btn:hover {
+            background: var(--primary-dark);
+            color: white;
         }
     </style>
 </head>
 <body>
     <div id="app">
-        <!-- 左侧浏览器区域 -->
-        <div id="browser-section">
-            <div id="tab-bar">
-                <div class="tab active">
-                    <span class="tab-title">新标签</span>
-                </div>
-                <button id="new-tab-btn">+</button>
-            </div>
-            <div id="url-bar-container">
-                <div id="nav-buttons">
-                    <button id="back-btn" title="后退">&#8592;</button>
-                    <button id="forward-btn" title="前进">&#8594;</button>
-                    <button id="refresh-btn" title="刷新">&#8635;</button>
-                </div>
-                <input type="text" id="url-bar" placeholder="输入网址..." />
-                <button id="go-btn">前往</button>
-            </div>
-            <div id="browser-container">
-                <div id="browser-loading">点击上方地址栏输入网址开始浏览</div>
-            </div>
+        <!-- 左侧说明区域 -->
+        <div id="info-section">
+            <h1>VOA</h1>
+            <p style="font-size: 16px;">视觉化操作助手</p>
+            
+            <h2>使用方法</h2>
+            <p>在右侧对话框中描述您想完成的任务，VOA 将自动指导您操作。</p>
+            
+            <h2>示例任务</h2>
+            <ul>
+                <li>"我想在 AWS 上启动一台 EC2"</li>
+                <li>"帮我登录 GitHub"</li>
+                <li>"在阿里云上创建服务器"</li>
+            </ul>
+            
+            <h2>开启浏览器</h2>
+            <p>点击下方按钮打开浏览器窗口，然后输入网址开始浏览。</p>
+            <p style="margin-top: 12px;">
+                <button id="open-browser-btn" style="padding: 12px 24px; font-size: 16px;">
+                    🌐 打开浏览器
+                </button>
+            </p>
+            
+            <h2>注意</h2>
+            <p>由于 Tauri 2.x 技术限制，浏览器将在新窗口中打开。这是当前版本的已知限制。</p>
         </div>
         
         <!-- 右侧对话面板 -->
@@ -412,12 +362,6 @@
         const { invoke } = window.__TAURI__.core;
         const { listen } = window.__TAURI__.event;
         
-        const urlBar = document.getElementById('url-bar');
-        const goBtn = document.getElementById('go-btn');
-        const backBtn = document.getElementById('back-btn');
-        const forwardBtn = document.getElementById('forward-btn');
-        const refreshBtn = document.getElementById('refresh-btn');
-        const browserContainer = document.getElementById('browser-container');
         const logPanel = document.getElementById('log-panel');
         const chatContainer = document.getElementById('chat-container');
         const userInput = document.getElementById('user-input');
@@ -425,8 +369,8 @@
         const autoModeBtn = document.getElementById('auto-mode-btn');
         const statusEl = document.getElementById('status');
         const clearLogBtn = document.getElementById('clear-log-btn');
+        const openBrowserBtn = document.getElementById('open-browser-btn');
         
-        let currentWebview = null;
         let autoMode = false;
         
         // 日志函数
@@ -442,121 +386,20 @@
         
         log('VOA 初始化完成', 'success');
         
-        // 创建 webview
-        async function createWebview(url) {
-            log(`创建 WebView: ${url}`);
-            
-            // 移除现有的 webview
-            if (currentWebview) {
-                currentWebview.remove();
-                currentWebview = null;
-            }
-            
-            // 移除 loading 提示
-            const loading = browserContainer.querySelector('#browser-loading');
-            if (loading) loading.remove();
-            
-            // 创建新的 webview 元素，先设置 src
-            const webview = document.createElement('webview');
-            webview.id = 'main-webview';
-            webview.style.cssText = 'width: 100%; height: 100%; border: none; display: block;';
-            
-            // 监听事件
-            webview.addEventListener('page-title-updated', (e) => {
-                log(`标题: ${e.payload}`);
-            });
-            
-            webview.addEventListener('did-start-loading', () => {
-                log('开始加载...');
-            });
-            
-            webview.addEventListener('did-finish-load', () => {
-                log(`加载完成: ${webview.getAttribute('src')}`, 'success');
-                urlBar.value = webview.getAttribute('src');
-            });
-            
-            webview.addEventListener('did-fail-load', (e) => {
-                log(`加载失败: ${e.payload.errorCode} - ${e.payload.errorDescription}`, 'error');
-            });
-            
-            webview.addEventListener('did-navigate', (e) => {
-                log(`导航: ${e.payload.url}`);
-                urlBar.value = e.payload.url;
-            });
-            
-            // 添加到 DOM 后再设置 src
-            browserContainer.appendChild(webview);
-            webview.setAttribute('src', url);
-            currentWebview = webview;
-            
-            log('WebView 已创建', 'success');
-        }
-        
-        // 导航功能
-        function navigateTo(url) {
-            if (!url) return;
-            
-            if (!url.startsWith('http://') && !url.startsWith('https://')) {
-                url = 'https://' + url;
-            }
-            
-            log(`导航: ${url}`);
-            
-            if (currentWebview) {
-                log('使用现有 WebView 导航');
-                currentWebview.setAttribute('src', url);
-            } else {
-                log('创建新 WebView');
-                createWebview(url);
-            }
-        }
-        
-        goBtn.addEventListener('click', () => {
-            log(`点击前往, URL: ${urlBar.value}`);
-            navigateTo(urlBar.value);
-        });
-        
-        urlBar.addEventListener('keydown', (e) => {
-            if (e.key === 'Enter') {
-                log(`回车导航, URL: ${urlBar.value}`);
-                navigateTo(urlBar.value);
-            }
-        });
-        
-        backBtn.addEventListener('click', () => {
-            log('后退');
-            if (currentWebview) {
-                try {
-                    currentWebview.goBack();
-                } catch (e) {
-                    log(`后退失败: ${e.message}`, 'error');
+        // 打开浏览器
+        openBrowserBtn.addEventListener('click', async () => {
+            log('正在打开浏览器...');
+            try {
+                const url = userInput.value.trim() || 'https://www.google.com';
+                if (!url.startsWith('http://') && !url.startsWith('https://')) {
+                    userInput.value = 'https://' + url;
                 }
-            } else {
-                log('无浏览历史', 'error');
-            }
-        });
-        
-        forwardBtn.addEventListener('click', () => {
-            log('前进');
-            if (currentWebview) {
-                try {
-                    currentWebview.goForward();
-                } catch (e) {
-                    log(`前进失败: ${e.message}`, 'error');
-                }
-            } else {
-                log('无浏览历史', 'error');
-            }
-        });
-        
-        refreshBtn.addEventListener('click', () => {
-            log('刷新');
-            if (currentWebview) {
-                try {
-                    currentWebview.reload();
-                } catch (e) {
-                    log(`刷新失败: ${e.message}`, 'error');
-                }
+                const label = await invoke('create_browser_window', { url: userInput.value || 'https://www.google.com' });
+                log(`浏览器窗口已创建: ${label}`, 'success');
+                addChatMessage('assistant', `浏览器窗口已打开，请在弹出窗口中浏览网页。`);
+            } catch (e) {
+                log(`打开浏览器失败: ${e}`, 'error');
+                addChatMessage('assistant', `打开浏览器失败: ${e}`);
             }
         });
         
@@ -593,9 +436,9 @@
         function processInput(input) {
             const lower = input.toLowerCase();
             if (lower.includes('打开') || lower.includes('浏览器')) {
-                addChatMessage('assistant', '浏览器已在左侧打开，请告诉我您的目标');
+                openBrowserBtn.click();
             } else {
-                addChatMessage('assistant', `好的，您的目标是: "${input}"\n\n请开启自动模式，我将帮您完成这个任务。`);
+                addChatMessage('assistant', `好的，您的目标是: "${input}"\n\n请告诉我要打开哪个网站，或者点击"打开浏览器"按钮开始浏览。`);
             }
         }
         
@@ -612,7 +455,7 @@
         // 初始化
         setTimeout(() => {
             statusEl.textContent = '就绪';
-            log('请点击地址栏输入网址开始浏览');
+            log('系统已就绪，请描述您的任务或打开浏览器');
         }, 1000);
     </script>
 </body>

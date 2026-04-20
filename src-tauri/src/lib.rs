@@ -1,7 +1,7 @@
 use base64::{engine::general_purpose::STANDARD, Engine};
 use serde::{Deserialize, Serialize};
 use std::io::Cursor;
-use tauri::{AppHandle, Emitter, Manager};
+use tauri::{AppHandle, Emitter, Manager, WebviewUrl, WebviewWindowBuilder};
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ScreenRegion {
@@ -90,22 +90,35 @@ async fn set_auto_mode(app: AppHandle, enabled: bool) -> Result<(), String> {
 }
 
 #[tauri::command]
-async fn navigate_browser(app: AppHandle, url: String) -> Result<(), String> {
-    let main_window = app.get_webview_window("main").ok_or("Main window not found")?;
-    
-    main_window.emit("browser-navigate", serde_json::json!({ "url": url }))
-        .map_err(|e| e.to_string())?;
-    
+async fn navigate_browser(app: AppHandle, window_label: String, url: String) -> Result<(), String> {
+    if let Some(window) = app.get_webview_window(&window_label) {
+        window.emit("webview-navigate", serde_json::json!({ "url": url }))
+            .map_err(|e| e.to_string())?;
+    }
     Ok(())
 }
 
 #[tauri::command]
-async fn create_browser_webview(app: AppHandle, url: String) -> Result<(), String> {
-    let main_window = app.get_webview_window("main").ok_or("Main window not found")?;
+async fn create_browser_window(app: AppHandle, url: String) -> Result<String, String> {
+    let label = format!("webview-{}", uuid::Uuid::new_v4());
     
-    main_window.emit("create-webview", serde_json::json!({ "url": url }))
-        .map_err(|e| e.to_string())?;
+    let window_builder = WebviewWindowBuilder::new(&app, &label, WebviewUrl::External(url.parse().map_err(|e: url::ParseError| e.to_string())?))
+        .title("Browser")
+        .inner_size(1000.0, 700.0)
+        .decorations(true)
+        .resizable(true)
+        .visible(true);
     
+    window_builder.build().map_err(|e| e.to_string())?;
+    
+    Ok(label)
+}
+
+#[tauri::command]
+async fn close_browser_window(app: AppHandle, window_label: String) -> Result<(), String> {
+    if let Some(window) = app.get_webview_window(&window_label) {
+        window.close().map_err(|e| e.to_string())?;
+    }
     Ok(())
 }
 
@@ -166,7 +179,8 @@ pub fn run() {
             analyze_page,
             set_auto_mode,
             navigate_browser,
-            create_browser_webview,
+            create_browser_window,
+            close_browser_window,
             show_highlight,
             hide_highlight,
             execute_browser_action,
