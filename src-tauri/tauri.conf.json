@@ -15,25 +15,13 @@
       {
         "label": "main",
         "title": "VOA - 视觉化操作助手",
-        "width": 1200,
-        "height": 800,
-        "minWidth": 800,
-        "minHeight": 600,
+        "width": 1400,
+        "height": 900,
+        "minWidth": 1000,
+        "minHeight": 700,
         "center": true,
         "resizable": true,
         "decorations": true
-      },
-      {
-        "label": "overlay",
-        "title": "VOA Overlay",
-        "url": "index.html",
-        "fullscreen": true,
-        "alwaysOnTop": true,
-        "skipTaskbar": true,
-        "decorations": false,
-        "resizable": false,
-        "transparent": true,
-        "visible": false
       }
     ],
     "security": {

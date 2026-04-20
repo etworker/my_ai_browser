@@ -1,7 +1,7 @@
 use base64::{engine::general_purpose::STANDARD, Engine};
 use serde::{Deserialize, Serialize};
 use std::io::Cursor;
-use tauri::{AppHandle, Emitter, Manager, WebviewUrl, WebviewWindowBuilder};
+use tauri::{AppHandle, Emitter, Manager};
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ScreenRegion {
@@ -80,62 +80,11 @@ async fn analyze_page(app: AppHandle, page_data: String) -> Result<(), String> {
 
 #[tauri::command]
 async fn set_auto_mode(app: AppHandle, enabled: bool) -> Result<(), String> {
-    if let Some(browser) = app.get_webview_window("browser") {
-        browser.emit("set_auto_mode", serde_json::json!({
+    if let Some(main) = app.get_webview_window("main") {
+        main.emit("set_auto_mode", serde_json::json!({
             "enabled": enabled
         }))
         .map_err(|e| e.to_string())?;
-    }
-    Ok(())
-}
-
-#[tauri::command]
-async fn open_browser_window(app: AppHandle) -> Result<(), String> {
-    if let Some(browser) = app.get_webview_window("browser") {
-        browser.show().map_err(|e| e.to_string())?;
-        browser.set_focus().map_err(|e| e.to_string())?;
-        return Ok(());
-    }
-    
-    WebviewWindowBuilder::new(&app, "browser", WebviewUrl::App("/browser.html".into()))
-        .title("VOA Browser")
-        .inner_size(1200.0, 800.0)
-        .min_inner_size(800.0, 600.0)
-        .center()
-        .resizable(true)
-        .decorations(true)
-        .build()
-        .map_err(|e| e.to_string())?;
-    
-    if let Some(browser) = app.get_webview_window("browser") {
-        browser.show().map_err(|e| e.to_string())?;
-        browser.set_focus().map_err(|e| e.to_string())?;
-    }
-    
-    Ok(())
-}
-
-#[tauri::command]
-async fn close_browser_window(app: AppHandle) -> Result<(), String> {
-    if let Some(browser) = app.get_webview_window("browser") {
-        browser.close().map_err(|e| e.to_string())?;
-    }
-    Ok(())
-}
-
-#[tauri::command]
-async fn create_overlay_window(app: AppHandle) -> Result<(), String> {
-    if let Some(overlay) = app.get_webview_window("overlay") {
-        overlay.show().map_err(|e| e.to_string())?;
-        overlay.set_focus().map_err(|e| e.to_string())?;
-    }
-    Ok(())
-}
-
-#[tauri::command]
-async fn close_overlay_window(app: AppHandle) -> Result<(), String> {
-    if let Some(overlay) = app.get_webview_window("overlay") {
-        overlay.hide().map_err(|e| e.to_string())?;
     }
     Ok(())
 }
@@ -169,15 +118,15 @@ async fn execute_browser_action(app: AppHandle, action: String) -> Result<(), St
     
     if action_type == "click" {
         if let Some(selector) = action_data["selector"].as_str() {
-            if let Some(browser) = app.get_webview_window("browser") {
-                browser.emit("click_action", serde_json::json!({ "selector": selector }))
+            if let Some(main) = app.get_webview_window("main") {
+                main.emit("click_action", serde_json::json!({ "selector": selector }))
                     .map_err(|e| e.to_string())?;
             }
         }
     } else if action_type == "navigate" {
         if let Some(url) = action_data["url"].as_str() {
-            if let Some(browser) = app.get_webview_window("browser") {
-                browser.emit("navigate_action", serde_json::json!({ "url": url }))
+            if let Some(main) = app.get_webview_window("main") {
+                main.emit("navigate_action", serde_json::json!({ "url": url }))
                     .map_err(|e| e.to_string())?;
             }
         }
@@ -192,20 +141,10 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_sql::Builder::new().build())
         .plugin(tauri_plugin_fs::init())
-        .setup(|app| {
-            if let Some(overlay) = app.get_webview_window("overlay") {
-                let _ = overlay.hide();
-            }
-            Ok(())
-        })
         .invoke_handler(tauri::generate_handler![
             capture_screen,
             analyze_page,
             set_auto_mode,
-            open_browser_window,
-            close_browser_window,
-            create_overlay_window,
-            close_overlay_window,
             show_highlight,
             hide_highlight,
             execute_browser_action,
