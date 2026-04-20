@@ -173,51 +173,17 @@
             opacity: 0.9;
         }
         
-        /* Webview 容器 */
-        #webview-container {
+        /* iframe 容器 */
+        #browser-frame {
             flex: 1;
             position: relative;
             background: white;
         }
         
-        #webview {
+        #browser-iframe {
             width: 100%;
             height: 100%;
             border: none;
-        }
-        
-        #auto-capture-panel {
-            position: absolute;
-            bottom: 10px;
-            right: 10px;
-            background: rgba(0,0,0,0.85);
-            color: white;
-            padding: 12px 16px;
-            border-radius: 8px;
-            font-size: 12px;
-            max-width: 300px;
-            z-index: 100;
-            display: none;
-        }
-        
-        #auto-capture-panel.show {
-            display: block;
-        }
-        
-        #auto-capture-panel .title {
-            font-weight: 600;
-            margin-bottom: 8px;
-            color: var(--primary);
-        }
-        
-        #auto-capture-panel .info {
-            color: #aaa;
-            margin-bottom: 4px;
-        }
-        
-        #auto-capture-panel .action {
-            color: #22c55e;
-            font-weight: 500;
         }
         
         /* 右侧对话面板 */
@@ -273,6 +239,38 @@
             flex: 1;
             overflow-y: auto;
             padding: 16px;
+            max-height: 300px;
+        }
+        
+        /* 日志面板 */
+        #log-panel {
+            height: 150px;
+            border-top: 1px solid var(--border);
+            background: #1e1e1e;
+            color: #d4d4d4;
+            font-family: 'Monaco', 'Menlo', monospace;
+            font-size: 11px;
+            overflow-y: auto;
+            padding: 8px;
+        }
+        
+        #log-panel .log-entry {
+            margin-bottom: 2px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        
+        #log-panel .log-entry.error {
+            color: #f48771;
+        }
+        
+        #log-panel .log-entry.info {
+            color: #4fc1ff;
+        }
+        
+        #log-panel .log-entry.success {
+            color: #89d185;
         }
         
         .chat-welcome {
@@ -372,6 +370,21 @@
             background: var(--primary);
             color: white;
         }
+        
+        #clear-log-btn {
+            padding: 4px 8px;
+            background: transparent;
+            color: #888;
+            border: 1px solid #555;
+            border-radius: 4px;
+            font-size: 10px;
+            cursor: pointer;
+        }
+        
+        #clear-log-btn:hover {
+            background: #333;
+            color: #fff;
+        }
     </style>
 </head>
 <body>
@@ -387,21 +400,15 @@
             </div>
             <div id="url-bar-container">
                 <div id="nav-buttons">
-                    <button id="back-btn" title="后退" disabled>&#8592;</button>
-                    <button id="forward-btn" title="前进" disabled>&#8594;</button>
+                    <button id="back-btn" title="后退">&#8592;</button>
+                    <button id="forward-btn" title="前进">&#8594;</button>
                     <button id="refresh-btn" title="刷新">&#8635;</button>
                 </div>
                 <input type="text" id="url-bar" placeholder="输入网址..." />
                 <button id="go-btn">前往</button>
             </div>
-            <div id="webview-container">
-                <webview id="webview" src="https://www.google.com"></webview>
-                <div id="auto-capture-panel">
-                    <div class="title">VOA 智能分析中</div>
-                    <div class="info" id="panel-url">URL: -</div>
-                    <div class="info" id="panel-dom">DOM元素: -</div>
-                    <div class="action" id="panel-action">等待分析...</div>
-                </div>
+            <div id="browser-frame">
+                <iframe id="browser-iframe" src="https://www.google.com"></iframe>
             </div>
         </div>
         
@@ -432,6 +439,11 @@
                     </ul>
                 </div>
             </div>
+            <div id="log-panel-header" style="padding: 4px 8px; background: #252526; display: flex; justify-content: space-between; align-items: center;">
+                <span style="color: #888; font-size: 11px;">日志</span>
+                <button id="clear-log-btn">清除</button>
+            </div>
+            <div id="log-panel"></div>
             <div id="input-area">
                 <textarea id="user-input" placeholder="描述您想完成的操作..." rows="2"></textarea>
                 <div id="input-actions">
@@ -446,73 +458,92 @@
         const { invoke } = window.__TAURI__.core;
         const { listen } = window.__TAURI__.event;
         
-        const webview = document.getElementById('webview');
+        const iframe = document.getElementById('browser-iframe');
         const urlBar = document.getElementById('url-bar');
         const goBtn = document.getElementById('go-btn');
         const backBtn = document.getElementById('back-btn');
         const forwardBtn = document.getElementById('forward-btn');
         const refreshBtn = document.getElementById('refresh-btn');
-        const autoCapturePanel = document.getElementById('auto-capture-panel');
-        const panelUrl = document.getElementById('panel-url');
-        const panelDom = document.getElementById('panel-dom');
-        const panelAction = document.getElementById('panel-action');
+        const logPanel = document.getElementById('log-panel');
         const chatContainer = document.getElementById('chat-container');
         const userInput = document.getElementById('user-input');
         const sendBtn = document.getElementById('send-btn');
         const autoModeBtn = document.getElementById('auto-mode-btn');
         const statusEl = document.getElementById('status');
+        const clearLogBtn = document.getElementById('clear-log-btn');
         
         let autoMode = false;
-        let lastUrl = '';
         let isProcessing = false;
-        let tabCounter = 1;
-        const tabs = [{ id: 0, title: '新标签', url: 'https://www.google.com' }];
+        
+        // 日志函数
+        function log(msg, type = 'info') {
+            const entry = document.createElement('div');
+            entry.className = `log-entry ${type}`;
+            const time = new Date().toLocaleTimeString();
+            entry.textContent = `[${time}] ${msg}`;
+            logPanel.appendChild(entry);
+            logPanel.scrollTop = logPanel.scrollHeight;
+            console.log(`[${type}] ${msg}`);
+        }
+        
+        log('VOA 初始化完成', 'success');
         
         // 导航功能
         function navigateTo(url) {
-            console.log('navigateTo called:', url);
+            log(`导航: ${url}`);
             if (!url.startsWith('http://') && !url.startsWith('https://')) {
                 url = 'https://' + url;
             }
-            console.log('navigating to:', url);
-            webview.src = url;
-            console.log('webview.src set to:', webview.src);
+            log(`实际导航到: ${url}`, 'success');
+            iframe.src = url;
         }
         
         goBtn.addEventListener('click', () => {
-            console.log('goBtn clicked, urlBar.value:', urlBar.value);
+            log(`点击前往按钮, URL: ${urlBar.value}`);
             navigateTo(urlBar.value);
         });
+        
         urlBar.addEventListener('keydown', (e) => {
             if (e.key === 'Enter') {
-                console.log('Enter pressed, urlBar.value:', urlBar.value);
+                log(`按下回车键, URL: ${urlBar.value}`);
                 navigateTo(urlBar.value);
             }
         });
         
-        backBtn.addEventListener('click', () => webview.goBack());
-        forwardBtn.addEventListener('click', () => webview.goForward());
+        backBtn.addEventListener('click', () => {
+            log('点击后退按钮');
+            try {
+                iframe.contentWindow.history.back();
+            } catch (e) {
+                log(`后退失败: ${e.message}`, 'error');
+            }
+        });
+        
+        forwardBtn.addEventListener('click', () => {
+            log('点击前进按钮');
+            try {
+                iframe.contentWindow.history.forward();
+            } catch (e) {
+                log(`前进失败: ${e.message}`, 'error');
+            }
+        });
+        
         refreshBtn.addEventListener('click', () => {
-            webview.reload();
-            if (autoMode) setTimeout(captureAndAnalyze, 2000);
-        });
-        
-        webview.addEventListener('did-navigate', (e) => {
-            console.log('did-navigate:', e.payload.url);
-            urlBar.value = e.payload.url;
-            tabs[0].url = e.payload.url;
-            if (autoMode && e.payload.url !== lastUrl) {
-                lastUrl = e.payload.url;
-                setTimeout(captureAndAnalyze, 1500);
+            log('点击刷新按钮');
+            try {
+                iframe.contentWindow.location.reload();
+            } catch (e) {
+                log(`刷新失败: ${e.message}`, 'error');
             }
         });
         
-        webview.addEventListener('did-navigate-in-page', (e) => {
-            console.log('did-navigate-in-page:', e.payload.url);
-            if (autoMode && e.payload.url !== lastUrl) {
-                lastUrl = e.payload.url;
-                setTimeout(captureAndAnalyze, 1000);
-            }
+        iframe.addEventListener('load', () => {
+            log(`页面加载完成: ${iframe.src}`, 'success');
+            urlBar.value = iframe.src;
+        });
+        
+        iframe.addEventListener('error', () => {
+            log('页面加载错误', 'error');
         });
         
         // 对话功能
@@ -528,8 +559,13 @@
             autoMode = !autoMode;
             autoModeBtn.classList.toggle('active', autoMode);
             autoModeBtn.textContent = autoMode ? '停止自动' : '自动模式';
-            addChatMessage('assistant', autoMode ? '🚀 自动模式已开启' : '自动模式已关闭');
-            if (autoMode) captureAndAnalyze();
+            addChatMessage('assistant', autoMode ? '自动模式已开启' : '自动模式已关闭');
+            log(`自动模式: ${autoMode ? '开启' : '关闭'}`, 'success');
+        });
+        
+        clearLogBtn.addEventListener('click', () => {
+            logPanel.innerHTML = '';
+            log('日志已清除');
         });
         
         function handleSend() {
@@ -567,72 +603,9 @@
             chatContainer.scrollTop = chatContainer.scrollHeight;
         }
         
-        // AI 分析功能
-        async function captureAndAnalyze() {
-            if (isProcessing) return;
-            isProcessing = true;
-            autoCapturePanel.classList.add('show');
-            panelAction.textContent = '正在获取页面信息...';
-            try {
-                panelUrl.textContent = 'URL: ' + webview.src;
-                const result = await webview.executeJavaScript(`
-                    (function() {
-                        const interactive = [];
-                        function findInteractive(el) {
-                            if (!el || !el.tagName) return;
-                            const tag = el.tagName.toLowerCase();
-                            const isInteractive = tag === 'button' || tag === 'a' || tag === 'input' || 
-                                                tag === 'select' || tag === 'textarea' ||
-                                                el.getAttribute('role') === 'button' ||
-                                                el.className?.includes('btn') || el.className?.includes('button') ||
-                                                el.onclick;
-                            if (isInteractive && el.getBoundingClientRect().width > 5 && el.offsetParent !== null) {
-                                const text = (el.innerText || el.value || el.placeholder || el.alt || '').trim().slice(0, 80);
-                                if (text || tag === 'button' || tag === 'a' || tag === 'input') {
-                                    const rect = el.getBoundingClientRect();
-                                    let selector = '';
-                                    if (el.id) selector = '#' + el.id;
-                                    else if (el.className && typeof el.className === 'string' && el.className.split(' ')[0]) {
-                                        selector = el.tagName.toLowerCase() + '.' + el.className.split(' ')[0];
-                                    } else {
-                                        selector = el.tagName.toLowerCase();
-                                    }
-                                    interactive.push({
-                                        tag, text,
-                                        rect: { x: Math.round(rect.x), y: Math.round(rect.y), 
-                                               width: Math.round(rect.width), height: Math.round(rect.height) },
-                                        selector,
-                                        href: tag === 'a' ? el.href : null,
-                                        type: tag === 'input' ? el.type : null,
-                                        placeholder: el.placeholder || null
-                                    });
-                                }
-                            }
-                            for (const child of el.children || []) findInteractive(child);
-                        }
-                        findInteractive(document.body);
-                        return JSON.stringify({
-                            title: document.title,
-                            url: window.location.href,
-                            elements: interactive.slice(0, 60)
-                        });
-                    })()
-                `);
-                const data = JSON.parse(result);
-                panelDom.textContent = 'DOM元素: ' + data.elements.length + '个';
-                panelAction.textContent = '分析完成';
-                addChatMessage('assistant', `页面分析: ${data.title}\n元素数: ${data.elements.length}`);
-            } catch (e) {
-                console.error('分析失败:', e);
-                panelAction.textContent = '分析失败';
-                setTimeout(() => autoCapturePanel.classList.remove('show'), 2000);
-            }
-            isProcessing = false;
-        }
-        
         async function analyzeAndAct() {
             addChatMessage('assistant', '正在分析页面...');
-            // AI 决策逻辑待实现
+            log('AI 分析功能待实现');
         }
         
         // 监听 Rust 事件
@@ -640,28 +613,18 @@
             autoMode = event.payload.enabled;
             autoModeBtn.classList.toggle('active', autoMode);
             autoModeBtn.textContent = autoMode ? '停止自动' : '自动模式';
-            if (autoMode) captureAndAnalyze();
         });
         
         listen('navigate_action', (event) => {
+            log(`收到导航事件: ${event.payload.url}`);
             navigateTo(event.payload.url);
-        });
-        
-        listen('click_action', (event) => {
-            const selector = event.payload.selector;
-            webview.executeJavaScript(`
-                (function() {
-                    const el = document.querySelector('${selector}');
-                    if (el) { el.click(); return { success: true }; }
-                    return { success: false };
-                })()
-            `);
         });
         
         // 初始化
         setTimeout(() => {
             statusEl.textContent = '就绪';
-            urlBar.value = webview.src;
+            urlBar.value = iframe.src;
+            log('浏览器已就绪，可以开始使用');
         }, 1000);
     </script>
 </body>
