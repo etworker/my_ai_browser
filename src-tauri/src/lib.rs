@@ -107,6 +107,11 @@ async fn open_browser_window(app: AppHandle) -> Result<(), String> {
         .build()
         .map_err(|e| e.to_string())?;
     
+    if let Some(browser) = app.get_webview_window("browser") {
+        browser.show().map_err(|e| e.to_string())?;
+        browser.set_focus().map_err(|e| e.to_string())?;
+    }
+    
     Ok(())
 }
 
