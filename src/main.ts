@@ -1,89 +1,60 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { extractScreenText, findTextRegion, OCRResult } from "./ocr";
-import { checkAIStatus, classifyUserIntent, sendMessage, ChatMessage } from "./ai";
-import { loadCalibration, applyCalibration } from "./calibration";
-import { visionModule, getScreenContext, parseAIResponse } from "./vision";
+import { sendMessage, checkAIStatus, ChatMessage } from "./ai";
 
-interface CaptureResult {
-    image_base64: string;
-    width: number;
-    height: number;
-}
-
-interface ScreenRegion {
-    x: number;
-    y: number;
-    width: number;
-    height: number;
-}
-
-interface WorkflowStep {
-    action: string;
-    target: string;
-    hint: string;
-    expectedText?: string;
-}
-
-interface Workflow {
-    name: string;
-    platform: string;
-    steps: WorkflowStep[];
-}
-
-interface InteractiveElement {
+interface PageElement {
     tag: string;
     text: string;
-    rect: ScreenRegion;
+    rect: { x: number; y: number; width: number; height: number };
     selector: string;
+    href?: string;
+    type?: string;
+    placeholder?: string;
 }
 
-interface DOMInfo {
+interface PageData {
     title: string;
     url: string;
-    interactive_elements: InteractiveElement[];
+    elements: PageElement[];
+    html: string;
+}
+
+interface AIDecision {
+    action: 'click' | 'type' | 'navigate' | 'wait' | 'done' | 'need_vision' | 'error';
+    target_selector?: string;
+    target_text?: string;
+    input_value?: string;
+    navigate_url?: string;
+    wait_seconds?: number;
+    reason: string;
+    confidence: number;
+    summary: string;
 }
 
 class VOAApp {
     private statusEl: HTMLElement;
-    private workflowInfoEl: HTMLElement;
-    private stepInfoEl: HTMLElement;
     private chatContainer: HTMLElement;
     private userInput: HTMLTextAreaElement;
-    private sendBtn: HTMLButtonElement;
-    private openBrowserBtn: HTMLButtonElement;
-    private captureBtn: HTMLButtonElement;
-    private calibrateBtn: HTMLButtonElement;
-    private toggleOverlayBtn: HTMLButtonElement;
-    private testHighlightBtn: HTMLButtonElement;
+    private autoModeBtn: HTMLButtonElement;
     
-    private isOverlayVisible = false;
-    private messages: ChatMessage[] = [];
-    private currentWorkflow: Workflow | null = null;
-    private currentStep = 0;
-    private lastOCRResult: OCRResult | null = null;
-    private currentPlatform = 'generic';
-    private currentDOM: DOMInfo | null = null;
-    private isBrowserOpen = false;
+    private currentPage: PageData | null = null;
+    private userGoal: string = '';
+    private workflowSteps: string[] = [];
+    private currentStepIndex = 0;
+    private isAutoMode = false;
+    private isProcessing = false;
 
     constructor() {
         this.statusEl = document.getElementById("status")!;
-        this.workflowInfoEl = document.getElementById("workflow-info")!;
-        this.stepInfoEl = document.getElementById("step-info")!;
         this.chatContainer = document.getElementById("chat-container")!;
         this.userInput = document.getElementById("user-input") as HTMLTextAreaElement;
-        this.sendBtn = document.getElementById("send-btn") as HTMLButtonElement;
-        this.openBrowserBtn = document.getElementById("open-browser-btn") as HTMLButtonElement;
-        this.captureBtn = document.getElementById("capture-btn") as HTMLButtonElement;
-        this.calibrateBtn = document.getElementById("calibrate-btn") as HTMLButtonElement;
-        this.toggleOverlayBtn = document.getElementById("toggle-overlay-btn") as HTMLButtonElement;
-        this.testHighlightBtn = document.getElementById("test-highlight-btn") as HTMLButtonElement;
+        this.autoModeBtn = document.getElementById("auto-mode-btn") as HTMLButtonElement;
 
         this.init();
     }
 
     private async init() {
-        this.sendBtn.addEventListener("click", () => this.handleSend());
+        document.getElementById("send-btn")?.addEventListener("click", () => this.handleSend());
         this.userInput.addEventListener("keydown", (e) => {
             if (e.key === "Enter" && !e.shiftKey) {
                 e.preventDefault();
@@ -91,56 +62,192 @@ class VOAApp {
             }
         });
         
-        this.openBrowserBtn?.addEventListener("click", () => this.handleOpenBrowser());
-        this.captureBtn.addEventListener("click", () => this.handleCapture());
-        this.calibrateBtn.addEventListener("click", () => this.handleCalibrate());
-        this.toggleOverlayBtn.addEventListener("click", () => this.toggleOverlay());
-        this.testHighlightBtn.addEventListener("click", () => this.testHighlight());
+        document.getElementById("open-browser-btn")?.addEventListener("click", () => this.openBrowser());
+        this.autoModeBtn?.addEventListener("click", () => this.toggleAutoMode());
 
         this.setupEventListeners();
         await this.checkAIStatus();
 
-        console.log("VOA 应用已初始化");
+        console.log("VOA 已初始化");
     }
 
     private setupEventListeners() {
-        listen('browser-capture', (event) => {
-            const { screenshot, url } = event.payload;
-            visionModule.setScreenshot({ screenshot, url, timestamp: Date.now() });
-            this.addChatMessage("assistant", `页面捕获成功！\nURL: ${url}\n\n现在可以告诉我下一步想做什么。`);
-        });
-
-        listen('browser-dom', (event) => {
-            const { dom, url } = event.payload;
-            this.currentDOM = dom;
-            visionModule.setDOM(dom);
-            this.addChatMessage("assistant", 
-                `DOM 获取成功！\n页面: ${dom.title}\n可交互元素: ${dom.interactive_elements.length}个\n\n现在可以告诉我您想点击什么，或者说"下一步"开始工作流。`
-            );
+        listen('page-analyzed', (event: any) => {
+            this.currentPage = event.payload.page;
+            this.onPageAnalyzed();
         });
     }
 
-    private async checkAIStatus() {
+    private async onPageAnalyzed() {
+        if (!this.currentPage || !this.userGoal) return;
+        
+        this.addChatMessage("assistant", `页面已更新: ${this.currentPage.title}\n分析元素: ${this.currentPage.elements.length}个\n\n正在思考下一步操作...`);
+        
+        if (this.isAutoMode) {
+            await this.analyzeAndAct();
+        }
+    }
+
+    private async analyzeAndAct() {
+        if (this.isProcessing || !this.currentPage || !this.userGoal) return;
+        this.isProcessing = true;
+        this.setStatus("AI 分析中...");
+
         try {
-            const status = await checkAIStatus();
-            if (status.available) {
-                this.addChatMessage("assistant", 
-                    `VOA 视觉化操作助手已就绪！\n\n` +
-                    `AI 模型: ${status.model}\n` +
-                    `使用方法:\n` +
-                    `1. 点击"打开浏览器"按钮\n` +
-                    `2. 在内置浏览器中访问 AWS 等网站\n` +
-                    `3. 点击"获取DOM"捕获页面元素\n` +
-                    `4. 描述您想完成的任务，AI 会指导您操作`
-                );
-            } else {
-                this.addChatMessage("assistant", 
-                    `AI 引擎未启动。请确保 Ollama 正在运行:\n` +
-                    `\`\`\`bash\nollama serve\nollama pull gemma4:e2b\n\`\`\``
-                );
+            const decision = await this.getAIDecision();
+            
+            this.addChatMessage("assistant", `分析结果: ${decision.summary}\n操作: ${decision.reason}`);
+
+            if (decision.action === 'done') {
+                this.addChatMessage("assistant", "🎉 任务完成！");
+                this.userGoal = '';
+                this.isAutoMode = false;
+                this.autoModeBtn.textContent = "开启自动模式";
+                await invoke("set_auto_mode", { enabled: false });
+            } else if (decision.action === 'click') {
+                await this.executeClick(decision);
+            } else if (decision.action === 'navigate') {
+                await this.executeNavigate(decision);
+            } else if (decision.action === 'need_vision') {
+                this.addChatMessage("assistant", "需要视觉辅助判断，请手动操作或等待更新...");
+            } else if (decision.action === 'wait') {
+                this.addChatMessage("assistant", `等待 ${decision.wait_seconds} 秒后继续...`);
+                setTimeout(() => this.analyzeAndAct(), (decision.wait_seconds || 3) * 1000);
             }
         } catch (e) {
-            console.warn("AI 状态检查失败:", e);
+            this.addChatMessage("assistant", `分析失败: ${e}`);
+        }
+
+        this.isProcessing = false;
+        this.setStatus("就绪");
+    }
+
+    private async getAIDecision(): Promise<AIDecision> {
+        if (!this.currentPage) {
+            return { action: 'error', reason: '无页面数据', confidence: 0, summary: '错误' };
+        }
+
+        const prompt = this.buildAnalysisPrompt();
+
+        try {
+            const response = await sendMessage([
+                { role: "system", content: "你是一个智能网页操作助手。你的任务是根据用户目标和页面信息，自主决定下一步操作。" },
+                { role: "user", content: prompt }
+            ]);
+
+            return this.parseAIDecision(response.content);
+        } catch (e) {
+            return { action: 'error', reason: `AI 调用失败: ${e}`, confidence: 0, summary: '错误' };
+        }
+    }
+
+    private buildAnalysisPrompt(): string {
+        const page = this.currentPage!;
+        
+        let prompt = `## 用户目标\n${this.userGoal}\n\n`;
+        prompt += `## 当前页面\n`;
+        prompt += `- 标题: ${page.title}\n`;
+        prompt += `- URL: ${page.url}\n`;
+        prompt += `- 可交互元素 (${page.elements.length}个):\n\n`;
+
+        for (const el of page.elements.slice(0, 40)) {
+            const text = el.text || el.placeholder || '';
+            const extra = el.href ? ` [链接: ${el.href}]` : '';
+            const inputType = el.type ? ` [类型: ${el.type}]` : '';
+            prompt += `- [${el.tag}${inputType}] "${text}" @ (${el.rect.x}, ${el.rect.y}) ${el.rect.width}x${el.rect.height}\n`;
+            prompt += `  selector: ${el.selector}${extra}\n`;
+        }
+
+        prompt += `\n## 决策要求\n`;
+        prompt += `根据用户目标，分析页面，确定下一步操作。\n\n`;
+        prompt += `可能操作:\n`;
+        prompt += `- click: 点击元素 (需要 target_selector)\n`;
+        prompt += `- type: 输入文本 (需要 target_selector 和 input_value)\n`;
+        prompt += `- navigate: 导航到 URL (需要 navigate_url)\n`;
+        prompt += `- wait: 等待页面加载 (需要 wait_seconds)\n`;
+        prompt += `- need_vision: 需要视觉辅助判断\n`;
+        prompt += `- done: 任务完成\n\n`;
+        prompt += `请以 JSON 格式返回:\n`;
+        prompt += `{\n`;
+        prompt += `  "action": "操作类型",\n`;
+        prompt += `  "reason": "决策理由",\n`;
+        prompt += `  "confidence": 0.0-1.0,\n`;
+        prompt += `  "summary": "简短总结",\n`;
+        prompt += `  "target_selector": "CSS选择器(仅click/type)",\n`;
+        prompt += `  "target_text": "目标文字(可选)",\n`;
+        prompt += `  "input_value": "输入内容(仅type)",\n`;
+        prompt += `  "navigate_url": "URL(仅navigate)",\n`;
+        prompt += `  "wait_seconds": 秒数(仅wait)\n`;
+        prompt += `}\n\n`;
+        prompt += `直接返回 JSON，不要其他内容。`;
+
+        return prompt;
+    }
+
+    private parseAIDecision(content: string): AIDecision {
+        try {
+            const jsonMatch = content.match(/\{[\s\S]*\}/);
+            if (jsonMatch) {
+                const data = JSON.parse(jsonMatch[0]);
+                return {
+                    action: data.action || 'error',
+                    target_selector: data.target_selector,
+                    target_text: data.target_text,
+                    input_value: data.input_value,
+                    navigate_url: data.navigate_url,
+                    wait_seconds: data.wait_seconds,
+                    reason: data.reason || '',
+                    confidence: data.confidence || 0.5,
+                    summary: data.summary || ''
+                };
+            }
+        } catch (e) {
+            console.error('解析 AI 决策失败:', e);
+        }
+        return { action: 'error', reason: '解析失败', confidence: 0, summary: '错误' };
+    }
+
+    private async executeClick(decision: AIDecision) {
+        if (!decision.target_selector) return;
+
+        this.addChatMessage("assistant", `执行点击: ${decision.target_text || decision.target_selector}`);
+
+        if (this.isAutoMode) {
+            try {
+                const result = await invoke("execute_browser_action", {
+                    action: JSON.stringify({
+                        type: 'click',
+                        selector: decision.target_selector
+                    })
+                });
+                
+                setTimeout(() => this.analyzeAndAct(), 2000);
+            } catch (e) {
+                this.addChatMessage("assistant", `点击执行失败: ${e}`);
+            }
+        } else {
+            this.addChatMessage("assistant", `请手动点击 "${decision.target_text || decision.target_selector}"，完成后告诉我"继续"`);
+        }
+    }
+
+    private async executeNavigate(decision: AIDecision) {
+        if (!decision.navigate_url) return;
+
+        this.addChatMessage("assistant", `导航到: ${decision.navigate_url}`);
+
+        if (this.isAutoMode) {
+            try {
+                await invoke("execute_browser_action", {
+                    action: JSON.stringify({
+                        type: 'navigate',
+                        url: decision.navigate_url
+                    })
+                });
+                
+                setTimeout(() => this.analyzeAndAct(), 3000);
+            } catch (e) {
+                this.addChatMessage("assistant", `导航失败: ${e}`);
+            }
         }
     }
 
@@ -151,270 +258,121 @@ class VOAApp {
         this.addChatMessage("user", input);
         this.userInput.value = "";
 
-        this.setStatus("思考中...");
-        
-        try {
-            const response = await this.processUserInput(input);
-            this.addChatMessage("assistant", response);
-        } catch (error) {
-            this.addChatMessage("assistant", `抱歉，发生了错误：${error}`);
-        }
-
-        this.setStatus("就绪");
+        await this.processUserInput(input);
     }
 
-    private async processUserInput(input: string): Promise<string> {
+    private async processUserInput(input: string) {
         const lower = input.toLowerCase();
 
-        if (lower.includes("打开") && (lower.includes("浏览器") || lower.includes("browser"))) {
-            return this.handleOpenBrowser();
+        if (lower.includes("打开") || lower.includes("浏览器")) {
+            return this.openBrowser();
         }
 
-        if (lower.includes("aws") || lower.includes("ec2") || lower.includes("启动") || lower.includes("创建")) {
-            this.currentWorkflow = {
-                name: "AWS EC2 启动流程",
-                platform: "aws",
-                steps: [
-                    { action: "点击", target: "服务搜索框", hint: "在 AWS 控制台顶部搜索框中输入 'EC2'" },
-                    { action: "点击", target: "EC2 选项", hint: "点击搜索结果中的 'EC2'" },
-                    { action: "点击", target: "启动实例按钮", hint: "点击 '启动实例' 按钮" },
-                    { action: "选择", target: "AMI", hint: "选择一个 Amazon Machine Image (AMI)" },
-                    { action: "选择", target: "实例类型", hint: "选择实例类型（如 t2.micro）" },
-                    { action: "配置", target: "实例详情", hint: "配置实例详情" },
-                    { action: "添加", target: "存储", hint: "添加存储卷" },
-                    { action: "配置", target: "安全组", hint: "配置安全组规则" },
-                    { action: "审核", target: "启动审核", hint: "审核配置并点击 '启动'" },
-                    { action: "选择", target: "密钥对", hint: "选择或创建密钥对，然后点击 '启动实例'" }
-                ]
-            };
-            this.currentPlatform = 'aws';
-            this.currentStep = 0;
-            this.updateWorkflowInfo();
-            this.updateStepInfo();
-            
-            return `好的，我将帮助您完成"${this.currentWorkflow.name}"。\n\n` +
-                `当前步骤 (1/${this.currentWorkflow.steps.length})：\n` +
-                `${this.currentWorkflow.steps[0].hint}\n\n` +
-                `请确保浏览器已打开并加载了 AWS 控制台。`;
+        if (lower.includes("自动") && (lower.includes("模式") || lower.includes("开始"))) {
+            return this.startAutoMode();
         }
 
-        if (lower.includes("下一步") || lower.includes("继续") || lower.includes("指导")) {
-            return await this.handleNextStep();
-        }
-
-        if (lower.includes("点击") && this.currentDOM) {
-            return await this.handleClickElement(input);
-        }
-
-        if (lower.includes("上一步") || lower.includes("返回")) {
-            if (!this.currentWorkflow || this.currentStep === 0) {
-                return "无法返回上一步。";
-            }
-            
-            this.currentStep--;
-            this.updateStepInfo();
-            const step = this.currentWorkflow.steps[this.currentStep];
-            
-            return `已返回上一步 (${this.currentStep + 1}/${this.currentWorkflow.steps.length})：\n${step.hint}`;
-        }
-
-        if (lower.includes("退出") || lower.includes("取消")) {
-            if (this.currentWorkflow) {
-                this.currentWorkflow = null;
-                this.currentStep = 0;
-                this.updateWorkflowInfo();
-                this.updateStepInfo();
-                return "已退出当前工作流。";
-            }
-            return "当前没有正在执行的工作流。";
-        }
-
-        if (lower.includes("校准")) {
-            return this.handleCalibrate();
-        }
-
-        try {
-            const intent = await classifyUserIntent(input);
-            return `我理解您想: ${intent.intent}\n\n置信度: ${(intent.confidence * 100).toFixed(0)}%\n\n请告诉我更具体的操作。`;
-        } catch (e) {
-            return `我理解您想做"${input}"。\n\n请打开浏览器并获取 DOM 后，告诉我您想完成的任务。`;
-        }
-    }
-
-    private async handleNextStep(): Promise<string> {
-        if (!this.currentWorkflow) {
-            return "您还没有选择任何工作流。请先告诉我您想做什么，比如"我想在 AWS 上启动 EC2"。";
-        }
-        
-        const step = this.currentWorkflow.steps[this.currentStep];
-        
-        if (!this.currentDOM) {
-            return `当前步骤 (${this.currentStep + 1}/${this.currentWorkflow.steps.length})：\n${step.hint}\n\n请先在浏览器中打开目标页面，然后点击"获取DOM"按钮。`;
-        }
-
-        const prompt = visionModule.generatePromptForStep(step.hint);
-        
-        try {
-            const response = await sendMessage([
-                { role: "system", content: "你是一个网页操作助手。根据用户意图和页面元素信息，返回下一步应该点击的元素。" },
-                { role: "user", content: prompt }
-            ]);
-
-            const analysis = parseAIResponse(response.content);
-
-            if (analysis && analysis.target_element) {
-                const target = analysis.target_element;
-                
-                await invoke("highlight_element", {
-                    selector: target.selector,
-                    hint: step.hint
-                });
-
-                await new Promise(resolve => setTimeout(resolve, 500));
-
-                this.addChatMessage("assistant", 
-                    `已定位目标: [${target.tag}] "${target.text}"\n\n` +
-                    `操作提示: ${step.hint}\n\n` +
-                    `点击元素后告诉我"下一步"继续。`
-                );
+        if (lower.includes("继续") || lower.includes("下一步")) {
+            if (this.isAutoMode) {
+                return this.analyzeAndAct();
             } else {
-                return `当前步骤 (${this.currentStep + 1}/${this.currentWorkflow.steps.length})：\n${step.hint}\n\nAI 置信度较低，请在页面上手动找到并点击正确的元素。`;
-            }
-        } catch (e) {
-            console.error("AI 分析失败:", e);
-            return `当前步骤 (${this.currentStep + 1}/${this.currentWorkflow.steps.length})：\n${step.hint}\n\nAI 分析失败，请在页面上手动找到并点击正确的元素。`;
-        }
-
-        return "";
-    }
-
-    private async handleClickElement(input: string): Promise<string> {
-        if (!this.currentDOM) {
-            return "请先点击"获取DOM"获取页面元素信息。";
-        }
-
-        const clickMatch = input.match(/点击[时分]?(.+)/);
-        if (!clickMatch) {
-            return "请说"点击[元素名称]"，比如"点击启动实例"。";
-        }
-
-        const targetText = clickMatch[1].trim();
-
-        for (const el of this.currentDOM.interactive_elements) {
-            if (el.text.includes(targetText) || targetText.includes(el.text)) {
-                try {
-                    await invoke("highlight_element", {
-                        selector: el.selector,
-                        hint: `点击 ${el.text}`
-                    });
-
-                    return `已高亮 "${el.text}"。\n\n确认后我将自动点击此元素，或者您可以手动点击。`;
-                } catch (e) {
-                    return `高亮失败: ${e}`;
-                }
+                return this.addChatMessage("assistant", "请先开启自动模式，或告诉我您想完成的任务。");
             }
         }
 
-        return `未找到包含"${targetText}"的元素。请尝试其他描述。`;
+        if (lower.includes("停止") || lower.includes("退出")) {
+            this.isAutoMode = false;
+            this.userGoal = '';
+            this.autoModeBtn.textContent = "开启自动模式";
+            await invoke("set_auto_mode", { enabled: false });
+            return this.addChatMessage("assistant", "已退出自动模式。");
+        }
+
+        this.userGoal = input;
+        this.addChatMessage("assistant", 
+            `好的，我已经理解您的目标: "${input}"\n\n` +
+            `请确保浏览器已打开并访问目标网站，然后：\n` +
+            `1. 点击"开启自动模式"按钮\n` +
+            `2. 我将自动分析页面并指导您操作\n\n` +
+            `或者点击"继续"让我分析当前页面。`
+        );
     }
 
-    private async handleOpenBrowser(): Promise<string> {
+    private async startAutoMode() {
+        if (!this.currentPage) {
+            this.addChatMessage("assistant", "请先在浏览器中打开目标网页。");
+            return;
+        }
+
+        if (!this.userGoal) {
+            this.addChatMessage("assistant", "请先告诉我您想完成什么任务。");
+            return;
+        }
+
+        this.isAutoMode = true;
+        this.autoModeBtn.textContent = "停止自动模式";
+        this.autoModeBtn.classList.add('active');
+        
+        await invoke("set_auto_mode", { enabled: true });
+        
+        this.addChatMessage("assistant", 
+            `🚀 自动模式已开启！\n\n` +
+            `目标: ${this.userGoal}\n` +
+            `当前页面: ${this.currentPage.title}\n\n` +
+            `我将自动分析页面并指导您下一步操作...`
+        );
+
+        await this.analyzeAndAct();
+    }
+
+    private async toggleAutoMode() {
+        if (this.isAutoMode) {
+            this.isAutoMode = false;
+            this.autoModeBtn.textContent = "开启自动模式";
+            this.autoModeBtn.classList.remove('active');
+            await invoke("set_auto_mode", { enabled: false });
+            this.addChatMessage("assistant", "自动模式已关闭。");
+        } else {
+            await this.startAutoMode();
+        }
+    }
+
+    private async openBrowser() {
         try {
             await invoke("open_browser_window");
-            this.isBrowserOpen = true;
-            return "浏览器窗口已打开。请在浏览器中访问您想操作的网站（如 AWS 控制台），然后点击"获取DOM"捕获页面元素。";
+            this.addChatMessage("assistant", "浏览器已打开。请在浏览器中访问您想操作的网站，然后告诉我您的目标。");
         } catch (e) {
-            return `打开浏览器失败: ${e}`;
+            this.addChatMessage("assistant", `打开浏览器失败: ${e}`);
         }
     }
 
-    private async handleCapture() {
-        this.setStatus("捕获屏幕中...");
-        
+    private async checkAIStatus() {
         try {
-            const result = await invoke<CaptureResult>("capture_screen");
-            console.log(`屏幕捕获成功: ${result.width}x${result.height}`);
-            
-            const img = document.createElement("img");
-            img.src = `data:image/png;base64,${result.image_base64}`;
-            img.className = "captured-image";
-            img.style.maxHeight = "300px";
-            
-            this.chatContainer.appendChild(img);
-            this.chatContainer.scrollTop = this.chatContainer.scrollHeight;
-            
-            this.setStatus("就绪");
-            this.addChatMessage("assistant", `屏幕捕获成功！分辨率: ${result.width}x${result.height}。`);
-        } catch (error) {
-            this.setStatus("错误");
-            this.addChatMessage("assistant", `屏幕捕获失败：${error}`);
-        }
-    }
-
-    private async handleCalibrate(): Promise<string> {
-        return `校准功能说明:\n\n` +
-            `校准用于提高元素定位精度。\n\n` +
-            `使用方法:\n` +
-            `1. 在目标网站（如 AWS 控制台）上点击一个已知元素\n` +
-            `2. 在聊天框中输入: 校准 x=100 y=200 (元素的实际屏幕坐标)\n` +
-            `3. 重复 3 次不同元素\n` +
-            `4. 系统会自动计算坐标变换矩阵`;
-    }
-
-    private async toggleOverlay() {
-        try {
-            if (this.isOverlayVisible) {
-                await this.hideHighlight();
+            const status = await checkAIStatus();
+            if (status.available) {
+                this.addChatMessage("assistant", 
+                    `VOA 智能助手已就绪！\n\n` +
+                    `AI 模型: ${status.model}\n\n` +
+                    `使用方法:\n` +
+                    `1. 点击"打开浏览器"访问目标网站\n` +
+                    `2. 告诉我您想完成的任务\n` +
+                    `3. 点击"开启自动模式"\n\n` +
+                    `AI 将自动分析页面、定位元素、指导操作！`
+                );
             } else {
-                await invoke("create_overlay_window");
-                this.isOverlayVisible = true;
-                this.toggleOverlayBtn.textContent = "隐藏高亮层";
-                this.addChatMessage("assistant", "高亮层已显示。");
+                this.addChatMessage("assistant", 
+                    `AI 未就绪。请启动 Ollama:\n` +
+                    `\`\`\`bash\nollama serve\nollama pull gemma4:e2b\n\`\`\``
+                );
             }
-        } catch (error) {
-            console.error("切换高亮层失败:", error);
-        }
-    }
-
-    private async hideHighlight() {
-        try {
-            await invoke("hide_highlight");
-            this.isOverlayVisible = false;
-            this.toggleOverlayBtn.textContent = "显示高亮层";
-        } catch (error) {
-            console.error("隐藏高亮失败:", error);
-        }
-    }
-
-    private async testHighlight() {
-        try {
-            await invoke("create_overlay_window");
-            this.isOverlayVisible = true;
-            this.toggleOverlayBtn.textContent = "隐藏高亮层";
-            
-            const testRegion: ScreenRegion = {
-                x: 300,
-                y: 200,
-                width: 250,
-                height: 80
-            };
-            
-            await invoke("show_highlight", {
-                region: testRegion,
-                hint: "这是一个测试高亮 - 点击此区域"
-            });
-            
-            this.addChatMessage("assistant", "测试高亮已显示。如果能看到红色半透明遮罩和脉冲边框，说明高亮系统工作正常。按 ESC 键可以关闭高亮。");
-        } catch (error) {
-            this.addChatMessage("assistant", `测试高亮失败：${error}`);
+        } catch (e) {
+            console.warn("AI 状态检查失败:", e);
         }
     }
 
     private addChatMessage(role: "user" | "assistant", content: string) {
         const welcomeEl = this.chatContainer.querySelector(".chat-welcome");
-        if (welcomeEl) {
-            welcomeEl.remove();
-        }
+        if (welcomeEl) welcomeEl.remove();
 
         const msgEl = document.createElement("div");
         msgEl.className = `chat-message ${role}`;
@@ -431,24 +389,10 @@ class VOAApp {
         msgEl.appendChild(contentEl);
         this.chatContainer.appendChild(msgEl);
         this.chatContainer.scrollTop = this.chatContainer.scrollHeight;
-
-        this.messages.push({ role, content });
     }
 
     private setStatus(status: string) {
         this.statusEl.textContent = status;
-    }
-
-    private updateWorkflowInfo() {
-        this.workflowInfoEl.textContent = this.currentWorkflow?.name || "-";
-    }
-
-    private updateStepInfo() {
-        if (this.currentWorkflow) {
-            this.stepInfoEl.textContent = `${this.currentStep + 1} / ${this.currentWorkflow.steps.length}`;
-        } else {
-            this.stepInfoEl.textContent = "-";
-        }
     }
 }
 

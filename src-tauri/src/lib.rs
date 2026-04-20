@@ -19,26 +19,23 @@ pub struct CaptureResult {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct BrowserPageInfo {
+pub struct PageData {
     pub title: String,
     pub url: String,
-    pub screenshot: String,
+    pub elements: Vec<PageElement>,
+    pub html: String,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct DOMInfo {
-    pub title: String,
-    pub url: String,
-    pub interactive_elements: Vec<InteractiveElement>,
-    pub full_dom: serde_json::Value,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct InteractiveElement {
+pub struct PageElement {
     pub tag: String,
     pub text: String,
     pub rect: ScreenRegion,
     pub selector: String,
+    pub href: Option<String>,
+    #[serde(rename = "type")]
+    pub input_type: Option<String>,
+    pub placeholder: Option<String>,
 }
 
 #[tauri::command]
@@ -70,25 +67,25 @@ fn capture_screen() -> Result<CaptureResult, String> {
 }
 
 #[tauri::command]
-async fn browser_capture(app: AppHandle, image_data: String, url: String) -> Result<(), String> {
-    app.emit("browser-capture", serde_json::json!({
-        "screenshot": image_data,
-        "url": url
+async fn analyze_page(app: AppHandle, page_data: String) -> Result<(), String> {
+    let data: PageData = serde_json::from_str(&page_data)
+        .map_err(|e| e.to_string())?;
+    
+    app.emit("page-analyzed", serde_json::json!({
+        "page": data
     }))
     .map_err(|e| e.to_string())?;
     Ok(())
 }
 
 #[tauri::command]
-async fn browser_dom(app: AppHandle, dom_data: String, url: String) -> Result<(), String> {
-    let dom_info: DOMInfo = serde_json::from_str(&dom_data)
+async fn set_auto_mode(app: AppHandle, enabled: bool) -> Result<(), String> {
+    if let Some(browser) = app.get_webview_window("browser") {
+        browser.emit("set_auto_mode", serde_json::json!({
+            "enabled": enabled
+        }))
         .map_err(|e| e.to_string())?;
-    
-    app.emit("browser-dom", serde_json::json!({
-        "dom": dom_info,
-        "url": url
-    }))
-    .map_err(|e| e.to_string())?;
+    }
     Ok(())
 }
 
@@ -102,7 +99,7 @@ async fn open_browser_window(app: AppHandle) -> Result<(), String> {
     
     WebviewWindowBuilder::new(&app, "browser", WebviewUrl::App("/browser.html".into()))
         .title("VOA Browser")
-        .inner_size(1024.0, 768.0)
+        .inner_size(1200.0, 800.0)
         .min_inner_size(800.0, 600.0)
         .center()
         .resizable(true)
@@ -117,36 +114,6 @@ async fn open_browser_window(app: AppHandle) -> Result<(), String> {
 async fn close_browser_window(app: AppHandle) -> Result<(), String> {
     if let Some(browser) = app.get_webview_window("browser") {
         browser.close().map_err(|e| e.to_string())?;
-    }
-    Ok(())
-}
-
-#[tauri::command]
-async fn highlight_element(
-    app: AppHandle,
-    selector: String,
-    hint: String,
-) -> Result<(), String> {
-    if let Some(browser) = app.get_webview_window("browser") {
-        browser.emit("highlight-element", serde_json::json!({
-            "selector": selector,
-            "hint": hint
-        }))
-        .map_err(|e| e.to_string())?;
-    }
-    Ok(())
-}
-
-#[tauri::command]
-async fn click_element(
-    app: AppHandle,
-    selector: String,
-) -> Result<(), String> {
-    if let Some(browser) = app.get_webview_window("browser") {
-        browser.emit("click-element", serde_json::json!({
-            "selector": selector
-        }))
-        .map_err(|e| e.to_string())?;
     }
     Ok(())
 }
@@ -188,6 +155,32 @@ async fn hide_highlight(app: AppHandle) -> Result<(), String> {
     Ok(())
 }
 
+#[tauri::command]
+async fn execute_browser_action(app: AppHandle, action: String) -> Result<(), String> {
+    let action_data: serde_json::Value = serde_json::from_str(&action)
+        .map_err(|e| e.to_string())?;
+    
+    let action_type = action_data["type"].as_str().unwrap_or("");
+    
+    if action_type == "click" {
+        if let Some(selector) = action_data["selector"].as_str() {
+            if let Some(browser) = app.get_webview_window("browser") {
+                browser.emit("click_action", serde_json::json!({ "selector": selector }))
+                    .map_err(|e| e.to_string())?;
+            }
+        }
+    } else if action_type == "navigate" {
+        if let Some(url) = action_data["url"].as_str() {
+            if let Some(browser) = app.get_webview_window("browser") {
+                browser.emit("navigate_action", serde_json::json!({ "url": url }))
+                    .map_err(|e| e.to_string())?;
+            }
+        }
+    }
+    
+    Ok(())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -202,16 +195,15 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             capture_screen,
-            browser_capture,
-            browser_dom,
+            analyze_page,
+            set_auto_mode,
             open_browser_window,
             close_browser_window,
-            highlight_element,
-            click_element,
             create_overlay_window,
             close_overlay_window,
             show_highlight,
             hide_highlight,
+            execute_browser_action,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

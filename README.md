@@ -1,7 +1,156 @@
-# Tauri + Vanilla TS
+# VOA - Visual Operation Assistant
 
-This template should help get you started developing with Tauri in vanilla HTML, CSS and Typescript.
+VOA（Visual Operation Assistant）是一个智能网页操作助手，能够理解浏览器页面内容，通过 AI 自主判断并指导用户完成操作流程（如 AWS EC2 启动、网页表单填写等）。
 
-## Recommended IDE Setup
+## 核心特性
 
-- [VS Code](https://code.visualstudio.com/) + [Tauri](https://marketplace.visualstudio.com/items?itemName=tauri-apps.tauri-vscode) + [rust-analyzer](https://marketplace.visualstudio.com/items?itemName=rust-lang.rust-analyzer)
+- **本地优先 AI**：优先使用 Ollama 本地模型（如 gemma4:e2b、Phi-3-mini），降低成本
+- **内置浏览器**：VOA 内置 WebView，可直接获取 DOM 和截图
+- **AI 自主决策**：LLM 自动判断使用 DOM（精确）还是视觉（语义理解），无需用户手动选择
+- **自动化执行**：开启自动模式后，AI 自动分析 → 决策 → 执行
+
+## 系统要求
+
+- Rust 1.70+
+- Node.js 18+
+- Ollama（用于本地 AI）
+
+## 安装依赖
+
+```bash
+cd voa
+npm install
+```
+
+## 启动 Ollama（必需）
+
+VOA 使用本地 AI 模型，需要先启动 Ollama：
+
+```bash
+# 启动 Ollama 服务
+ollama serve
+
+# 下载推荐模型（首次运行）
+ollama pull gemma4:e2b
+# 或使用 Phi-3-mini
+ollama pull phi3-mini
+```
+
+## 运行开发版本
+
+```bash
+cd voa
+npm run tauri dev
+```
+
+## 使用方法
+
+### 1. 打开内置浏览器
+
+点击主界面左侧的 **"打开浏览器"** 按钮，或在浏览器窗口中手动访问目标网站。
+
+### 2. 告诉 VOA 你的目标
+
+在输入框中描述你想完成的任务，例如：
+
+- "帮我登录 AWS 控制台"
+- "启动一台 EC2 实例"
+- "填写并提交这个表单"
+
+### 3. 开启自动模式
+
+点击 **"开启自动模式"** 按钮，VOA 将：
+
+1. 自动分析当前页面 DOM 结构
+2. AI 决策下一步操作
+3. 高亮显示即将点击的元素
+4. 执行操作并等待页面响应
+5. 循环直到任务完成
+
+### 4. 手动辅助
+
+如果 AI 需要视觉辅助判断，可以：
+
+- 切换到手动模式，自己操作
+- 操作完成后说"继续"，让 AI 继续执行
+
+## 工作原理
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                         VOA 主窗口                          │
+│  ┌─────────────┐    ┌─────────────┐    ┌─────────────┐    │
+│  │  对话界面   │    │  内置浏览器 │    │  高亮覆盖层 │    │
+│  └─────────────┘    └─────────────┘    └─────────────┘    │
+└─────────────────────────────────────────────────────────────┘
+                              │
+                    analyze_page 命令
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────┐
+│                      Rust 后端                              │
+│  ┌─────────────┐    ┌─────────────┐    ┌─────────────┐    │
+│  │  屏幕捕获   │    │  浏览器控制 │    │  事件分发   │    │
+│  └─────────────┘    └─────────────┘    └─────────────┘    │
+└─────────────────────────────────────────────────────────────┘
+                              │
+                           sendMessage
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────┐
+│                      AI 引擎                                │
+│  ┌─────────────────────────────────────────────────────┐  │
+│  │              Ollama / OpenAI API                     │  │
+│  └─────────────────────────────────────────────────────┘  │
+└─────────────────────────────────────────────────────────────┘
+```
+
+## 项目结构
+
+```
+voa/
+├── src/                      # 前端源码
+│   ├── main.ts             # 主应用（对话 + AI 决策）
+│   ├── browser.html        # 内置浏览器
+│   ├── overlay.html        # 高亮覆盖层
+│   ├── ai/index.ts         # AI 引擎
+│   ├── ocr/index.ts        # OCR 模块
+│   ├── calibration/        # 坐标校准
+│   └── vision/             # 视觉模块
+├── src-tauri/              # Rust 后端
+│   ├── src/lib.rs          # 命令定义
+│   └── tauri.conf.json     # Tauri 配置
+└── package.json
+```
+
+## 配置 AI 模型
+
+编辑 `src/ai/index.ts` 修改 AI 配置：
+
+```typescript
+const OLLAMA_BASE_URL = "http://localhost:11434";
+const DEFAULT_MODEL = "gemma4:e2b";  // 或 "phi3-mini"
+```
+
+## 常见问题
+
+### AI 未就绪
+
+确保 Ollama 已启动并下载了模型：
+
+```bash
+ollama serve
+ollama list  # 查看已下载的模型
+```
+
+### 浏览器无法打开
+
+检查 `tauri.conf.json` 中的窗口配置是否正确。
+
+### 自动模式不执行操作
+
+可能是选择器匹配失败，尝试切换到手动模式确认元素位置。
+
+## 许可证
+
+MIT
